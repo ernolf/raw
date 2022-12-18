@@ -6,8 +6,12 @@ use \Exception;
 trait RawResponse {
 	protected function returnRawResponse($fileNode) {
 		if ($fileNode->getType() === 'dir') {
-			// Is there some reasonable thing to return for a directory? An html index? A tarball?
-			throw new Exception("Requested share is a directory, not a file.");
+			// If the requested path is a folder, try return its index.html.
+			try {
+				$fileNode = $fileNode->get('index.html');
+			} catch (NotFoundException $e) {
+				return new NotFoundResponse();
+			}
 		}
 
 		$content = $fileNode->getContent();
