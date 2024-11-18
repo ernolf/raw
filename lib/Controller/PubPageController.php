@@ -38,6 +38,15 @@ class PubPageController extends Controller {
 	 * @NoAdminRequired
 	 * @NoCSRFRequired
 	 */
+	public function getByTokenWithoutS($token, $path) {
+		return $this->getByToken($token, $path);
+	}
+
+	/**
+	 * @PublicPage
+	 * @NoAdminRequired
+	 * @NoCSRFRequired
+	 */
 	public function getByTokenAndPath($token, $path) {
 		$share = $this->shareManager->getShareByToken($token);
 		$dirNode = $share->getNode();
@@ -50,5 +59,14 @@ class PubPageController extends Controller {
 			return new NotFoundResponse();
 		}
 		$this->returnRawResponse($fileNode);
+	}
+
+	/**
+	 * @PublicPage
+	 * @NoAdminRequired
+	 * @NoCSRFRequired
+	 */
+	public function getByTokenAndPathWithoutS($token, $path) {
+		return $this->getByTokenAndPath($token, $path);
 	}
 }
