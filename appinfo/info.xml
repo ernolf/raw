@@ -15,9 +15,20 @@ The common usage is to first share a file and enable public access through a lin
 
 A user can also access their own private files. For example, a file named `test.html` in anansi's Documents folder would be available at `https://my-nextcloud/apps/raw/u/anansi/Documents/test.html`.
 
+Tokens must be explicitly whitelisted in the configuration to be allowed for raw access.
+
+One or both of the following arrays in the `config/config.php` of your Nextcloud instance must be defined, to configure token-based whitelist restrictions:
+
+- **`allowed_raw_tokens`**  
+  An array of explicitly allowed tokens. These tokens must exactly match those used in raw links.
+
+- **`allowed_raw_token_wildcards`**  
+  An array of wildcard patterns (`*`) that allow for flexible matching of multiple tokens. Wildcards are translated into regular expressions for dynamic validation.
+
+
 [Content-Security-Policy]: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy
 </description>
-    <version>0.1.1</version>
+    <version>0.2.0</version>
     <licence>agpl</licence>
     <author mail="gerben@treora.com">Gerben</author>
     <author>ernolf - Raphael Gradenwitz</author>

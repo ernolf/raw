@@ -2,6 +2,7 @@
 namespace OCA\Raw\Controller;
 
 use \Exception;
+use OCP\IConfig;
 use OCP\IRequest;
 use OCP\Share\IManager;
 use OCP\AppFramework\Controller;
@@ -12,14 +13,40 @@ class PubPageController extends Controller {
 	use RawResponse;
 
 	private $shareManager;
+	private $config;
 
 	public function __construct(
 		$AppName,
 		IRequest $request,
-		IManager $shareManager
+		IManager $shareManager,
+		IConfig $config
 	) {
 		parent::__construct($AppName, $request);
 		$this->shareManager = $shareManager;
+		$this->config = $config;
+	}
+
+	private function isAllowedToken($token) {
+		// Load allowed tokens and wildcards from config
+		$allowedTokens = $this->config->getSystemValue('allowed_raw_tokens', []);
+		$allowedWildcards = $this->config->getSystemValue('allowed_raw_token_wildcards', []);
+
+		// Direct match check
+		if (in_array($token, $allowedTokens, true)) {
+			return true;
+		}
+
+		// Wildcard match check
+		foreach ($allowedWildcards as $wildcard) {
+			// Replace '*' with a regex pattern to match any number of any characters
+			$pattern = '/^' . str_replace('\*', '.*', preg_quote($wildcard, '/')) . '$/';
+
+			if (preg_match($pattern, $token)) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**
@@ -28,6 +55,10 @@ class PubPageController extends Controller {
 	 * @NoCSRFRequired
 	 */
 	public function getByToken($token) {
+		if (!$this->isAllowedToken($token)) {
+			return new NotFoundResponse();
+		}
+
 		$share = $this->shareManager->getShareByToken($token);
 		$node = $share->getNode();
 		$this->returnRawResponse($node);
@@ -48,6 +79,10 @@ class PubPageController extends Controller {
 	 * @NoCSRFRequired
 	 */
 	public function getByTokenAndPath($token, $path) {
+		if (!$this->isAllowedToken($token)) {
+			return new NotFoundResponse();
+		}
+
 		$share = $this->shareManager->getShareByToken($token);
 		$dirNode = $share->getNode();
 		if ($dirNode->getType() !== 'dir') {
