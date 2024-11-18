@@ -20,10 +20,9 @@ Documents folder would be available at `https://my-nextcloud/apps/raw/u/anansi/D
 
 ## Installation
 
-Clone this repo into your Nextcloud installation's `/apps` (or `/custom_apps`) folder, ensuring the
-folder's name is `raw`:
+Clone this repo into your Nextcloud installation's `/apps` (or `/custom_apps`) folder:
 
-    git clone https://code.treora.com/gerben/nextcloud-raw raw
+    git clone https://github.com/ernolf/raw
 
 Then log into Nextcloud as admin, find and enable it in the list of apps.
 

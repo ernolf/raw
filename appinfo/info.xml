@@ -5,33 +5,26 @@
     <name>Raw</name>
     <summary>Serves files on the World Wide Web</summary>
     <description>
-Raw simply returns any requested file, so you can link directly to a file itself (i.e. without any
-of NextCloud's interface around it). This enables you to host static web pages, images or other
-files, for example to link/embed them elsewhere on the web.
+Raw simply returns any requested file, so you can link directly to a file itself (i.e. without any of NextCloud's interface around it). This enables you to host static web pages, images or other files, for example to link/embed them elsewhere on the web.
 
-For security and privacy, the content is served with a [Content-Security-Policy][] header. This
-header instructs browsers to not load any remote content, nor execute any scripts that it may
-contain (of course, the downside is that your web pages cannot use javascript for interactivity).
+For security and privacy, the content is served with a [Content-Security-Policy][] header. This header instructs browsers to not load any remote content, nor execute any scripts that it may contain (of course, the downside is that your web pages cannot use javascript for interactivity).
 
 ## Usage
 
-The common usage is to first share a file and enable public access through a link. If the share link
-is `https://my-nextcloud/s/aBc123DeF456xyZ`, then this app will provide access to the raw file at
-`https://my-nextcloud/apps/raw/s/aBc123DeF456xyZ`.  If the share is a folder, the files within it
-are accessible as e.g. `https://my-nextcloud/apps/raw/s/aBc123DeF456xyZ/path/to/file`.
+The common usage is to first share a file and enable public access through a link. If the share link is `https://my-nextcloud/s/aBc123DeF456xyZ`, then this app will provide access to the raw file at `https://my-nextcloud/apps/raw/s/aBc123DeF456xyZ`.  If the share is a folder, the files within it are accessible as e.g. `https://my-nextcloud/apps/raw/s/aBc123DeF456xyZ/path/to/file`.
 
-A user can also access their own private files. For example, a file named `test.html` in anansi's
-Documents folder would be available at `https://my-nextcloud/apps/raw/u/anansi/Documents/test.html`.
+A user can also access their own private files. For example, a file named `test.html` in anansi's Documents folder would be available at `https://my-nextcloud/apps/raw/u/anansi/Documents/test.html`.
 
 [Content-Security-Policy]: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy
 </description>
-    <version>0.1.0</version>
+    <version>0.1.1</version>
     <licence>agpl</licence>
     <author mail="gerben@treora.com">Gerben</author>
+    <author>ernolf - Raphael Gradenwitz</author>
     <namespace>Raw</namespace>
     <category>files</category>
-    <repository type="git">https://code.treora.com/gerben/nextcloud-raw</repository>
-    <bugs>https://code.treora.com/gerben/nextcloud-raw/issues</bugs>
+    <repository type="git">https://github.com/ernolf/raw</repository>
+    <bugs>https://github.com/ernolf/raw/issues</bugs>
     <dependencies>
         <nextcloud min-version="14"/>
     </dependencies>
