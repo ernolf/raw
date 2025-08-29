@@ -95,6 +95,47 @@ Review and update allowed_raw_tokens and allowed_raw_token_wildcards periodicall
 Use meaningful share tokens wherever possible for improved manageability.
 Validate CSP rules and token configurations in a test environment before applying them in production.
 
+## Conditional Requests / Cache validation with ETags and Last-Modified
+
+`raw` supports conditional requests (cache validation) using ETags together with the `If-None-Match` header and also supports `Last-Modified` / `If-Modified-Since` semantics.
+
+- **ETag / If-None-Match**: The server sends an `ETag` header identifying the current representation of the file. If the client sends `If-None-Match: "<ETag>"` and the value matches, the server responds with `304 Not Modified` and no response body. The wildcard `If-None-Match: *` is also supported.
+- **Last-Modified / If-Modified-Since**: When the server can read file modification time (mtime) it sets a `Last-Modified` header. The server will honor `If-Modified-Since` when `If-None-Match` is not present. If the client date is equal to or newer than the file mtime, the server responds with `304 Not Modified`.
+- **Unix timestamp convenience**: For convenience, `If-Modified-Since` accepts either a RFC-style HTTP-date (recommended) **or** a plain Unix timestamp (seconds). The server will trim optional quotes. Note that RFC-style dates are the standard and should be preferred for interoperability.
+- **Cookie policy**: `raw` will attempt to avoid sending cookies in responses by removing any `Set-Cookie` headers that PHP/Nextcloud may have queued for the current request. This prevents PHP-emitted cookies from being delivered to clients.
+
+### Examples
+
+Get file and see headers + body (returns ETag and Last-Modified):
+```bash
+curl -i 'https://your.nextcloud/apps/raw/.../file.ext'
+```
+
+Conditional GET using ETag (should return 304 if it matches):
+```bash
+curl -i -H 'If-None-Match: "<ETag>"' 'https://your.nextcloud/apps/raw/.../file.ext'
+```
+
+Conditional GET using HTTP-date:
+```bash
+curl -i -H 'If-Modified-Since: "Sun, 25 May 2025 21:40:02 GMT"' 'https://your.nextcloud/apps/raw/.../file.ext'
+```
+
+Conditional GET using Unix timestamp (convenience):
+```bash
+curl -i -H 'If-Modified-Since: "1748209203"' 'https://your.nextcloud/apps/raw/.../file.ext'
+```
+
+Example request header (replace `<ETag>` with the ETag value returned by the server):
+```bash
+If-None-Match: "<ETag>"
+```
+
+The wildcard `If-None-Match: *` is also supported (it matches any existing representation) and will return a 304 if the resource exits.
+```bash
+curl -i -H 'If-None-Match: *' 'https://your.nextcloud/apps/raw/.../file.ext'
+```
+
 ## Installation
 
 Clone this repo into your Nextcloud installation's `/apps` (or `/custom_apps`) folder:
@@ -108,3 +149,4 @@ This app is currently not published in the Nextcloud app store.
 
 [Content-Security-Policy]: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy
 [cfg_share_links]: https://github.com/jimmyl0l3c/cfg_share_links
+

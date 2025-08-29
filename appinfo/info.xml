@@ -9,6 +9,8 @@ Raw simply returns any requested file, so you can link directly to a file itself
 
 For security and privacy, the content is served with a [Content-Security-Policy][] header. This header instructs browsers to not load any remote content, nor execute any scripts that it may contain (of course, the downside is that your web pages cannot use javascript for interactivity).
 
+[Content-Security-Policy]: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy
+
 ## Usage
 
 The common usage is to first share a file and enable public access through a link. If the share link is `https://my-nextcloud/s/aBc123DeF456xyZ`, then this app will provide access to the raw file at `https://my-nextcloud/apps/raw/s/aBc123DeF456xyZ`.  If the share is a folder, the files within it are accessible as e.g. `https://my-nextcloud/apps/raw/s/aBc123DeF456xyZ/path/to/file`.
@@ -25,8 +27,13 @@ One or both of the following arrays in the `config/config.php` of your Nextcloud
 - **`allowed_raw_token_wildcards`**  
   An array of wildcard patterns (`*`) that allow for flexible matching of multiple tokens. Wildcards are translated into regular expressions for dynamic validation.
 
+## Caching and conditional requests
 
-[Content-Security-Policy]: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy
+`raw` supports conditional requests and cache validation:
+
+- **ETags (`ETag` / `If-None-Match`)**: The app generates an `ETag` (preferred: mtime+size; fallback: content hash). If the client sends `If-None-Match` and the tag matches, the server responds with `304 Not Modified` and no body.
+- **Last-Modified (`Last-Modified` / `If-Modified-Since`)**: When possible the app sets the `Last-Modified` header from the file's modification time (mtime). `If-Modified-Since` is honored when `If-None-Match` is not present. For convenience the server accepts either an RFC-style HTTP-date or a plain Unix timestamp in `If-Modified-Since`.
+- **Cookie behavior**: The app removes PHP-set `Set-Cookie` headers for the current response to avoid sending cookies to clients.
 </description>
     <version>0.3.0</version>
     <licence>agpl</licence>
