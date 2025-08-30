@@ -1,8 +1,10 @@
 <?php
 namespace OCA\Raw\Controller;
 
+use OCA\Raw\Service\CspManager;
 use OCP\IRequest;
 use OCP\IServerContainer;
+use OCP\IConfig;
 use OCP\AppFramework\Http\NotFoundResponse;
 use OCP\AppFramework\Controller;
 use OCP\Files\Folder;
@@ -11,18 +13,31 @@ use OCP\Files\NotFoundException;
 class PrivatePageController extends Controller {
 	use RawResponse;
 
+	/** @var string */
 	private $loggedInUserId;
+
+	/** @var IServerContainer */
 	private $serverContainer;
+
+	/** @var IConfig */
+	protected $config;
+
+	/** @var CspManager */
+	protected $cspManager;
 
 	public function __construct(
 		$AppName,
 		$UserId,
 		IRequest $request,
-		IServerContainer $serverContainer
+		IServerContainer $serverContainer,
+		IConfig $config
 	) {
 		parent::__construct($AppName, $request);
 		$this->loggedInUserId = $UserId;
 		$this->serverContainer = $serverContainer;
+		$this->config = $config;
+		// Create CspManager using IConfig (clean DI)
+		$this->cspManager = new CspManager($this->config);
 	}
 
 	/**
