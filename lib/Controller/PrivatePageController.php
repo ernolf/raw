@@ -5,39 +5,55 @@ use OCA\Raw\Service\CspManager;
 use OCP\IRequest;
 use OCP\IServerContainer;
 use OCP\IConfig;
-use OCP\AppFramework\Http\NotFoundResponse;
+use OCP\IUserSession;
 use OCP\AppFramework\Controller;
-use OCP\Files\Folder;
+use OCP\AppFramework\Http\NotFoundResponse;
 use OCP\Files\NotFoundException;
 
 class PrivatePageController extends Controller {
 	use RawResponse;
 
-	/** @var string */
+	/** @var string|null */
 	private $loggedInUserId;
 
 	/** @var IServerContainer */
 	private $serverContainer;
 
-	/** @var IConfig */
-	protected $config;
-
 	/** @var CspManager */
 	protected $cspManager;
 
+	/** @var IConfig */
+	private $config;
+
+	/**
+	 * @param string $appName
+	 * @param IRequest $request
+	 * @param IServerContainer $serverContainer
+	 * @param IConfig $config
+	 * @param CspManager $cspManager
+	 * @param IUserSession $userSession
+	 */
 	public function __construct(
-		$AppName,
-		$UserId,
+		$appName,
 		IRequest $request,
 		IServerContainer $serverContainer,
-		IConfig $config
+		IConfig $config,
+		CspManager $cspManager,
+		IUserSession $userSession
 	) {
-		parent::__construct($AppName, $request);
-		$this->loggedInUserId = $UserId;
+		parent::__construct($appName, $request);
+
 		$this->serverContainer = $serverContainer;
 		$this->config = $config;
-		// Create CspManager using IConfig (clean DI)
-		$this->cspManager = new CspManager($this->config);
+		$this->cspManager = $cspManager;
+
+		// Set loggedInUserId from the user session if available (null if anonymous)
+		// This is safer and more idiomatic than passing the UID into the constructor.
+		$this->loggedInUserId = null;
+		if ($userSession->isLoggedIn() && $userSession->getUser() !== null) {
+			$this->loggedInUserId = $userSession->getUser()->getUID();
+		}
+		// Note: for public/anonymous requests loggedInUserId remains null
 	}
 
 	/**

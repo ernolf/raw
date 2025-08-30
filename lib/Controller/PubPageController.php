@@ -1,7 +1,6 @@
 <?php
 namespace OCA\Raw\Controller;
 
-use \Exception;
 use OCA\Raw\Service\CspManager;
 use OCP\IConfig;
 use OCP\IRequest;
@@ -11,29 +10,26 @@ use OCP\AppFramework\Http\NotFoundResponse;
 use OCP\Files\NotFoundException;
 
 class PubPageController extends Controller {
-	// bring in trait behaviour (trait must be defined in lib/Controller/RawResponse.php)
 	use RawResponse;
 
 	/** @var IManager */
 	private $shareManager;
-
 	/** @var IConfig */
 	private $config;
-
 	/** @var CspManager */
 	protected $cspManager;
 
 	public function __construct(
-		$AppName,
+		$appName,
 		IRequest $request,
 		IManager $shareManager,
-		IConfig $config
+		IConfig $config,
+		CspManager $cspManager
 	) {
-		parent::__construct($AppName, $request);
+		parent::__construct($appName, $request);
 		$this->shareManager = $shareManager;
 		$this->config = $config;
-		// Create CspManager using IConfig (clean DI)
-		$this->cspManager = new CspManager($this->config);
+		$this->cspManager = $cspManager;
 	}
 
 	private function isAllowedToken($token) {
