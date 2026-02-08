@@ -2,6 +2,8 @@
 namespace OCA\Raw\Controller;
 
 use OCA\Raw\Service\CspManager;
+use OCP\AppFramework\Http\Attribute\NoAdminRequired;
+use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
 use OCP\IRequest;
 use OCP\IServerContainer;
 use OCP\IConfig;
@@ -56,10 +58,8 @@ class PrivatePageController extends Controller {
 		// Note: for public/anonymous requests loggedInUserId remains null
 	}
 
-	/**
-	 * @NoAdminRequired
-	 * @NoCSRFRequired
-	 */
+	#[NoAdminRequired]
+	#[NoCSRFRequired]
 	public function getByPath($userId, $path) {
 		if ($userId !== $this->loggedInUserId) {
 			// TODO Currently, we only allow access to one's own files. I suppose we could implement
