@@ -1,34 +1,65 @@
 <?php
 namespace OCA\Raw\Controller;
 
+use OCA\Raw\Service\CspManager;
+use OCP\AppFramework\Http\Attribute\NoAdminRequired;
+use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
 use OCP\IRequest;
 use OCP\IServerContainer;
-use OCP\AppFramework\Http\NotFoundResponse;
+use OCP\IConfig;
+use OCP\IUserSession;
 use OCP\AppFramework\Controller;
-use OCP\Files\Folder;
+use OCP\AppFramework\Http\NotFoundResponse;
 use OCP\Files\NotFoundException;
 
 class PrivatePageController extends Controller {
 	use RawResponse;
 
+	/** @var string|null */
 	private $loggedInUserId;
+
+	/** @var IServerContainer */
 	private $serverContainer;
 
-	public function __construct(
-		$AppName,
-		$UserId,
-		IRequest $request,
-		IServerContainer $serverContainer
-	) {
-		parent::__construct($AppName, $request);
-		$this->loggedInUserId = $UserId;
-		$this->serverContainer = $serverContainer;
-	}
+	/** @var CspManager */
+	protected $cspManager;
+
+	/** @var IConfig */
+	private $config;
 
 	/**
-	 * @NoAdminRequired
-	 * @NoCSRFRequired
+	 * @param string $appName
+	 * @param IRequest $request
+	 * @param IServerContainer $serverContainer
+	 * @param IConfig $config
+	 * @param CspManager $cspManager
+	 * @param IUserSession $userSession
 	 */
+	public function __construct(
+		$appName,
+		IRequest $request,
+		IServerContainer $serverContainer,
+		IConfig $config,
+		CspManager $cspManager,
+		IUserSession $userSession
+	) {
+		parent::__construct($appName, $request);
+
+		$this->serverContainer = $serverContainer;
+		$this->config = $config;
+		$this->cspManager = $cspManager;
+
+		// Set loggedInUserId from the user session if available (null if anonymous)
+		// This is safer and more idiomatic than passing the UID into the constructor.
+		$this->loggedInUserId = null;
+		if ($userSession->isLoggedIn() && $userSession->getUser() !== null) {
+			$this->loggedInUserId = $userSession->getUser()->getUID();
+		}
+		// Note: for public/anonymous requests loggedInUserId remains null
+	}
+
+	#[NoAdminRequired]
+	#[NoCSRFRequired]
 	public function getByPath($userId, $path) {
 		if ($userId !== $this->loggedInUserId) {
 			// TODO Currently, we only allow access to one's own files. I suppose we could implement

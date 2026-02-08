@@ -1,32 +1,10 @@
 <?php
 namespace OCA\Raw\Controller;
 
+use OCA\Raw\Service\CspManager;
 use \Exception;
 
 trait RawResponse {
-/*
-	protected function getMimeType($fileNode) {
-		$filename = $fileNode->getName();
-		$mimetype = $fileNode->getMimeType();
-
-		// If the MIME type is not determined by the extension, we can try to determine it ourselves
-		if (empty(pathinfo($filename, PATHINFO_EXTENSION))) {
-			// Example: Determine MIME type based on file content or predefined types
-			$content = $fileNode->getContent();
-			if (strpos($content, '<?php') === 0) {
-				$mimetype = 'text/x-php';
-			} elseif (strpos($content, '<!DOCTYPE html>') === 0) {
-				$mimetype = 'text/html';
-			} elseif (preg_match('/^\s*{/', $content)) { // check for JSON
-				$mimetype = 'application/json';
-			} else {
-				$mimetype = 'text/plain'; // default to plain text
-			}
-		}
-
-		return $mimetype;
-	}
- */
 
 	/**
 	 * Determine MIME type for a file node.
@@ -53,9 +31,12 @@ trait RawResponse {
 	 * Return a raw HTTP response for the given file node.
 	 *
 	 * - If the node is a directory, attempt to return its index.html.
-	 * - Compute an ETag (prefer mtime+size; fallback to md5 of content).
+	 * - Compute ETag (prefer mtime+size; fallback to md5 of content).
 	 * - Honor If-None-Match header (supports '*', multiple values, weak ETags).
+	 * - Honor If-Modified-Since header using Last-Modified from mtime when available.
+	 *   Accept either RFC-style HTTP-date or a plain Unix timestamp (convenience).
 	 * - Return 304 Not Modified when appropriate (no body).
+	 * - Attempt to remove cookies by sending expired Set-Cookie headers for cookies present.
 	 * - Support HEAD requests: send headers only.
 	 */
 	protected function returnRawResponse($fileNode) {
@@ -74,10 +55,9 @@ trait RawResponse {
 
 		// --- Build ETag: prefer mtime+size to avoid expensive hashing ---
 		$etag = null;
+		$mtime = null;
+		$size = null;
 		try {
-			$mtime = null;
-			$size = null;
-
 			// Try common metadata accessors on the node; not all node types expose these.
 			if (is_callable([$fileNode, 'getMTime'])) {
 				$mtime = $fileNode->getMTime();
@@ -102,58 +82,112 @@ trait RawResponse {
 			$etag = '"' . md5($content) . '"';
 		}
 
-		// --- Check If-None-Match header from the client ---
+		// --- Prepare Last-Modified header (if mtime available) ---
+		$lastModifiedHeader = null;
+		if ($mtime !== null) {
+			// Format as HTTP-date in GMT, e.g. "Fri, 29 Aug 2025 20:53:02 GMT"
+			$lastModifiedHeader = gmdate('D, d M Y H:i:s', (int)$mtime) . ' GMT';
+		}
+
+		// --- Check If-None-Match header from the client first (ETag has priority) ---
 		$ifNoneMatch = $_SERVER['HTTP_IF_NONE_MATCH'] ?? '';
-		$matched = false;
+		$matchedEtag = false;
 
 		if ($ifNoneMatch !== '') {
-			// Clients may send multiple ETags separated by commas.
 			$clientEtags = preg_split('/\s*,\s*/', $ifNoneMatch);
 			foreach ($clientEtags as $c) {
 				$c = trim($c);
-
-				// Wildcard '*' matches any current representation.
 				if ($c === '*') {
-					$matched = true;
+					$matchedEtag = true;
 					break;
 				}
-
-				// Remove optional weak indicator (W/) and quotes, extracting the raw tag.
-				// Example: W/"abc" or "abc" -> abc
 				$clean = preg_replace('/^\s*(W\/)?\s*"(.*)"\s*$/i', '$2', $c);
-
-				// If regex did not change the value, strip quotes conservatively.
 				if ($clean === $c) {
 					$clean = trim($c, " \t\n\r\0\x0B\"");
 				}
-
-				// Compare against server ETag without surrounding quotes.
 				$serverEtagValue = trim($etag, '"');
 				if ($clean === $serverEtagValue) {
-					$matched = true;
+					$matchedEtag = true;
 					break;
 				}
 			}
 		}
 
-		// Set strict Content-Security-Policy as before.
-		header(
-			"Content-Security-Policy: sandbox; default-src 'none'; img-src data:; media-src data:; "
-			. "style-src data: 'unsafe-inline'; font-src data:; frame-src data:"
-		);
+		// --- If no ETag match, evaluate If-Modified-Since (only if Last-Modified is available) ---
+		$matchedIMS = false;
+		if (!$matchedEtag && $lastModifiedHeader !== null) {
+			$ifModifiedSince = $_SERVER['HTTP_IF_MODIFIED_SINCE'] ?? '';
+			if ($ifModifiedSince !== '') {
+				// Remove optional surrounding quotes and whitespace
+				$clean = trim($ifModifiedSince, " \t\n\r\0\x0B\"");
 
-		// If matched, respond with 304 Not Modified (no body).
-		if ($matched) {
+				// If the header is purely numeric, treat it as a unix timestamp (seconds).
+				if (preg_match('/^\d+$/', $clean)) {
+					$clientTime = (int)$clean;
+				} else {
+					// Fallback to strtotime for HTTP-date parsing.
+					$clientTime = strtotime($clean);
+				}
+
+				// Compare only if we successfully parsed a time value.
+				if ($clientTime !== false && $clientTime >= (int)$mtime) {
+					$matchedIMS = true;
+				}
+			}
+		}
+
+		// inside trait RawResponse (where CSP is needed)
+
+		// Expect the controller to provide a CspManager instance.
+		// If not present, throw a RuntimeException so the problem is visible and fixed in tests.
+		if (!isset($this->cspManager) || !($this->cspManager instanceof \OCA\Raw\Service\CspManager)) {
+			// throw explicit exception — do not silently fall back
+			throw new \RuntimeException('CspManager missing: controllers must create and assign $this->cspManager using IConfig.');
+		}
+
+		// Use the provided manager
+		$csp = $this->cspManager->determineCspForRequest($fileNode);
+
+		// Ensure not empty (defensive but not silent fallback)
+		// If empty, throw so admin/developer notices misconfiguration
+		if (trim($csp) === '') {
+			throw new \RuntimeException('CspManager returned empty CSP for request; check raw_csp configuration.');
+		}
+		header('Content-Security-Policy: ' . $csp);
+
+
+		/*
+		 * Before finalizing response — remove Set-Cookie headers set earlier by PHP/Nextcloud.
+		 * This will prevent PHP from sending any Set-Cookie headers that were already queued.
+		 * Note: it cannot stop a reverse-proxy or webserver module from adding Set-Cookie afterwards.
+		 */
+		if (session_status() === PHP_SESSION_ACTIVE) {
+			// close session so PHP won't try to re-send the session cookie later
+			session_write_close();
+			// disable session cookies for the remainder of the request
+			ini_set('session.use_cookies', 0);
+		}
+		header_remove('Set-Cookie');
+
+		// --- If either ETag matched or If-Modified-Since matched -> 304 Not Modified ---
+		if ($matchedEtag || $matchedIMS) {
+			// Send ETag and Last-Modified if available
 			header('ETag: ' . $etag);
+			if ($lastModifiedHeader !== null) {
+				header('Last-Modified: ' . $lastModifiedHeader);
+			}
 			header('Cache-Control: public, max-age=0');
 			http_response_code(304);
 			exit;
 		}
 
-		// Otherwise send normal headers and body. Include Content-Length and ETag.
+		// --- Otherwise send normal headers and body. Include Content-Length, ETag and Last-Modified ---
 		header("Content-Type: {$mimetype}");
 		header('Content-Length: ' . strlen($content));
 		header('ETag: ' . $etag);
+		if ($lastModifiedHeader !== null) {
+			header('Last-Modified: ' . $lastModifiedHeader);
+		}
 		header('Cache-Control: public, max-age=0');
 
 		// For HEAD requests, send headers only and exit.

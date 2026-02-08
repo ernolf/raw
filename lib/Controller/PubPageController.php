@@ -1,7 +1,10 @@
 <?php
 namespace OCA\Raw\Controller;
 
-use \Exception;
+use OCA\Raw\Service\CspManager;
+use OCP\AppFramework\Http\Attribute\NoAdminRequired;
+use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
+use OCP\AppFramework\Http\Attribute\PublicPage;
 use OCP\IConfig;
 use OCP\IRequest;
 use OCP\Share\IManager;
@@ -12,18 +15,24 @@ use OCP\Files\NotFoundException;
 class PubPageController extends Controller {
 	use RawResponse;
 
+	/** @var IManager */
 	private $shareManager;
+	/** @var IConfig */
 	private $config;
+	/** @var CspManager */
+	protected $cspManager;
 
 	public function __construct(
-		$AppName,
+		$appName,
 		IRequest $request,
 		IManager $shareManager,
-		IConfig $config
+		IConfig $config,
+		CspManager $cspManager
 	) {
-		parent::__construct($AppName, $request);
+		parent::__construct($appName, $request);
 		$this->shareManager = $shareManager;
 		$this->config = $config;
+		$this->cspManager = $cspManager;
 	}
 
 	private function isAllowedToken($token) {
@@ -49,11 +58,9 @@ class PubPageController extends Controller {
 		return false;
 	}
 
-	/**
-	 * @PublicPage
-	 * @NoAdminRequired
-	 * @NoCSRFRequired
-	 */
+	#[NoAdminRequired]
+	#[NoCSRFRequired]
+	#[PublicPage]
 	public function getByToken($token) {
 		if (!$this->isAllowedToken($token)) {
 			return new NotFoundResponse();
@@ -63,21 +70,16 @@ class PubPageController extends Controller {
 		$node = $share->getNode();
 		$this->returnRawResponse($node);
 	}
-
-	/**
-	 * @PublicPage
-	 * @NoAdminRequired
-	 * @NoCSRFRequired
-	 */
+	#[NoAdminRequired]
+	#[NoCSRFRequired]
+	#[PublicPage]
 	public function getByTokenWithoutS($token, $path) {
 		return $this->getByToken($token, $path);
 	}
 
-	/**
-	 * @PublicPage
-	 * @NoAdminRequired
-	 * @NoCSRFRequired
-	 */
+	#[NoAdminRequired]
+	#[NoCSRFRequired]
+	#[PublicPage]
 	public function getByTokenAndPath($token, $path) {
 		if (!$this->isAllowedToken($token)) {
 			return new NotFoundResponse();
@@ -95,12 +97,9 @@ class PubPageController extends Controller {
 		}
 		$this->returnRawResponse($fileNode);
 	}
-
-	/**
-	 * @PublicPage
-	 * @NoAdminRequired
-	 * @NoCSRFRequired
-	 */
+	#[NoAdminRequired]
+	#[NoCSRFRequired]
+	#[PublicPage]
 	public function getByTokenAndPathWithoutS($token, $path) {
 		return $this->getByTokenAndPath($token, $path);
 	}
