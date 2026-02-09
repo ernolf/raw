@@ -353,7 +353,7 @@ Example request header (replace `<ETag>` with the ETag value returned by the ser
 If-None-Match: "<ETag>"
 ```
 
-The wildcard `If-None-Match: *` is also supported (it matches any existing representation) and will return a 304 if the resource exits.
+The wildcard `If-None-Match: *` is also supported (it matches any existing representation) and will return a 304 if the resource exists.
 ```bash
 curl -i -H 'If-None-Match: *' 'https://your.nextcloud/apps/raw/.../file.ext'
 ```
