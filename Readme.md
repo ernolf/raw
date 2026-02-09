@@ -283,12 +283,12 @@ The manager checks `path_contains` against both the full request path and the pa
 
 After you update `config/config.php` (or deploy changes), test with curl:
 
-# public share (token) URL
+### public share (token) URL
 ```sh
 curl -I 'https://your-instance.example/apps/raw/s/html/calc.html'
 ```
 
-# private user URL
+### private user URL
 ```sh
 curl -I 'https://your-instance.example/apps/raw/u/alice/Documents/html/calc.html'
 ```
