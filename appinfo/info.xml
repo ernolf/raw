@@ -11,6 +11,8 @@ For security and privacy, the content is served with a [Content-Security-Policy]
 
 [Content-Security-Policy]: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy
 
+The Content-Security-Policy (CSP) is configurable via the system config key `raw_csp`, allowing different policies per share token, path, file extension, or MIME type (with a safe hardcoded fallback).
+
 ## Usage
 
 The common usage is to first share a file and enable public access through a link. If the share link is `https://my-nextcloud/s/aBc123DeF456xyZ`, then this app will provide access to the raw file at `https://my-nextcloud/apps/raw/s/aBc123DeF456xyZ`.  If the share is a folder, the files within it are accessible as e.g. `https://my-nextcloud/apps/raw/s/aBc123DeF456xyZ/path/to/file`.
@@ -35,15 +37,16 @@ One or both of the following arrays in the `config/config.php` of your Nextcloud
 - **Last-Modified (`Last-Modified` / `If-Modified-Since`)**: When possible the app sets the `Last-Modified` header from the file's modification time (mtime). `If-Modified-Since` is honored when `If-None-Match` is not present. For convenience the server accepts either an RFC-style HTTP-date or a plain Unix timestamp in `If-Modified-Since`.
 - **Cookie behavior**: The app removes PHP-set `Set-Cookie` headers for the current response to avoid sending cookies to clients.
 </description>
-    <version>0.3.0</version>
+    <version>0.3.1</version>
     <licence>agpl</licence>
     <author mail="gerben@treora.com">Gerben</author>
-    <author>ernolf - Raphael Gradenwitz</author>
+    <author mail="raphael.gradenwitz@googlemail.com">[ernolf] - Raphael Gradenwitz</author>
     <namespace>Raw</namespace>
     <category>files</category>
     <repository type="git">https://github.com/ernolf/raw</repository>
     <bugs>https://github.com/ernolf/raw/issues</bugs>
     <dependencies>
-        <nextcloud min-version="14"/>
+        <php min-version="8.0"/>
+        <nextcloud min-version="26"/>
     </dependencies>
 </info>
