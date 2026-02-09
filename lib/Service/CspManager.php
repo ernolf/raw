@@ -70,9 +70,17 @@ class CspManager {
 		$uriPath = parse_url($uri, PHP_URL_PATH) ?: $uri;
 		$uriPath = urldecode($uriPath);
 
+		// Detect private URL form: /apps/raw/u/{userId}/...
+		$isPrivate = false;
+		$privateUserId = null;
+		if (preg_match('#^/apps/raw/u/([^/]+)#', $uriPath, $mUser)) {
+			$isPrivate = true;
+			$privateUserId = $mUser[1];
+		}
+
 		// 1) Token extraction: support both /apps/raw/s/{token} and /apps/raw/{token}
 		$token = null;
-		if (preg_match('#^/apps/raw(?:/(?:s|u))?/([^/]+)#', $uriPath, $m)) {
+		if (!$isPrivate && preg_match('#^/apps/raw(?:/s)?/([^/]+)#', $uriPath, $m)) {
 			$token = $m[1];
 			// exact token match has highest priority
 			if (isset($tokens[$token])) {
@@ -81,8 +89,10 @@ class CspManager {
 		}
 
 		// Compute path after optional token for relative matching
-		if ($token !== null) {
-			$afterTokenPath = preg_replace('#^/apps/raw(?:/(?:s|u))?/' . preg_quote($token, '#') . '#', '', $uriPath);
+		if ($isPrivate && $privateUserId !== null) {
+			$afterTokenPath = preg_replace('#^/apps/raw/u/' . preg_quote($privateUserId, '#') . '#', '', $uriPath);
+		} elseif ($token !== null) {
+			$afterTokenPath = preg_replace('#^/apps/raw(?:/s)?/' . preg_quote($token, '#') . '#', '', $uriPath);
 		} else {
 			$afterTokenPath = preg_replace('#^/apps/raw#', '', $uriPath);
 		}
