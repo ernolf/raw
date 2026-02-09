@@ -1,16 +1,16 @@
 <?php
 namespace OCA\Raw\AppInfo;
 
-use OCP\AppFramework\App;
-use OCP\IContainer;
-use OCP\IConfig;
-use OCP\ILogger;
-use OCP\IRequest;
-use OCP\IServerContainer;
-use OCP\Share\IManager;
-use OCA\Raw\Service\CspManager;
-use OCA\Raw\Controller\PubPageController;
 use OCA\Raw\Controller\PrivatePageController;
+use OCA\Raw\Controller\PubPageController;
+use OCA\Raw\Service\CspManager;
+use OCP\AppFramework\App;
+use OCP\IConfig;
+use OCP\IContainer;
+use OCP\IRequest;
+use OCP\IUserSession;
+use OCP\Files\IRootFolder;
+use OCP\Share\IManager;
 
 class Application extends App {
 	/**
@@ -34,9 +34,7 @@ class Application extends App {
 		$c->registerService('CspManager', function($container) {
 			/** @var IConfig $config */
 			$config = $container->query('OCP\IConfig');
-			/** @var ILogger $logger */
-			$logger = $container->query('OCP\ILogger');
-			return new CspManager($config, $logger);
+			return new CspManager($config);
 		});
 	}
 
@@ -62,14 +60,14 @@ class Application extends App {
 			$appName = $container->getAppName();
 			/** @var IRequest $request */
 			$request = $container->query('Request');
-			/** @var IServerContainer $serverContainer */
-			$serverContainer = $container->query('OCP\IServerContainer');
-			/** @var IConfig $config */
-			$config = $container->query('OCP\IConfig');
+			/** @var IRootFolder $rootFolder */
+			$rootFolder = $container->query('OCP\Files\IRootFolder');
 			/** @var CspManager $cspManager */
 			$cspManager = $container->query('CspManager');
+			/** @var IUserSession $userSession */
+			$userSession = $container->query('OCP\IUserSession');
 
-			return new PrivatePageController($appName, $request, $serverContainer, $config, $cspManager);
+			return new PrivatePageController($appName, $request, $rootFolder, $cspManager, $userSession);
 		});
 	}
 }

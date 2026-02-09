@@ -2,15 +2,14 @@
 namespace OCA\Raw\Controller;
 
 use OCA\Raw\Service\CspManager;
+use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
 use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
-use OCP\IRequest;
-use OCP\IServerContainer;
-use OCP\IConfig;
-use OCP\IUserSession;
-use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http\NotFoundResponse;
+use OCP\Files\IRootFolder;
 use OCP\Files\NotFoundException;
+use OCP\IRequest;
+use OCP\IUserSession;
 
 class PrivatePageController extends Controller {
 	use RawResponse;
@@ -18,35 +17,29 @@ class PrivatePageController extends Controller {
 	/** @var string|null */
 	private $loggedInUserId;
 
-	/** @var IServerContainer */
-	private $serverContainer;
+	/** @var IRootFolder */
+	private $rootFolder;
 
 	/** @var CspManager */
 	protected $cspManager;
 
-	/** @var IConfig */
-	private $config;
-
 	/**
 	 * @param string $appName
 	 * @param IRequest $request
-	 * @param IServerContainer $serverContainer
-	 * @param IConfig $config
+	 * @param IRootFolder $rootFolder
 	 * @param CspManager $cspManager
 	 * @param IUserSession $userSession
 	 */
 	public function __construct(
 		$appName,
 		IRequest $request,
-		IServerContainer $serverContainer,
-		IConfig $config,
+		IRootFolder $rootFolder,
 		CspManager $cspManager,
 		IUserSession $userSession
 	) {
 		parent::__construct($appName, $request);
 
-		$this->serverContainer = $serverContainer;
-		$this->config = $config;
+		$this->rootFolder = $rootFolder;
 		$this->cspManager = $cspManager;
 
 		// Set loggedInUserId from the user session if available (null if anonymous)
@@ -67,7 +60,7 @@ class PrivatePageController extends Controller {
 			return new NotFoundResponse(); // would 403 Forbidden be better?
 		}
 
-		$userFolder = $this->serverContainer->getUserFolder($userId);
+		$userFolder = $this->rootFolder->getUserFolder($userId);
 		if (!$userFolder) {
 			return new NotFoundResponse();
 		}
