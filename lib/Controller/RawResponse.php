@@ -2,13 +2,16 @@
 namespace OCA\Raw\Controller;
 
 use OCA\Raw\Service\CspManager;
-use \Exception;
+use OCP\AppFramework\Http\NotFoundResponse;
+use OCP\Files\NotFoundException;
 
 trait RawResponse {
 
 	/**
-	 * Determine MIME type for a file node.
-	 * If the filename has no extension, use finfo to detect MIME type from content.
+	 * Determine the MIME type for a file node.
+	 *
+	 * Uses the node-provided MIME type by default. If the filename has no extension,
+	 * detects the MIME type from the file content via finfo(FILEINFO_MIME_TYPE).
 	 */
 	protected function getMimeType($fileNode) {
 		$filename = $fileNode->getName();
@@ -30,14 +33,23 @@ trait RawResponse {
 	/**
 	 * Return a raw HTTP response for the given file node.
 	 *
-	 * - If the node is a directory, attempt to return its index.html.
-	 * - Compute ETag (prefer mtime+size; fallback to md5 of content).
-	 * - Honor If-None-Match header (supports '*', multiple values, weak ETags).
-	 * - Honor If-Modified-Since header using Last-Modified from mtime when available.
-	 *   Accept either RFC-style HTTP-date or a plain Unix timestamp (convenience).
-	 * - Return 304 Not Modified when appropriate (no body).
-	 * - Attempt to remove cookies by sending expired Set-Cookie headers for cookies present.
-	 * - Support HEAD requests: send headers only.
+	 * Behavior implemented by this method:
+	 *
+	 * - If the node is a directory, attempts to serve "index.html".
+	 * - Reads the node content into memory.
+	 * - Computes an ETag:
+	 *   - prefers mtime+size when available
+	 *   - otherwise falls back to md5(content)
+	 * - Sends caching headers (ETag, Cache-Control, Content-Length, and Last-Modified when mtime is available).
+	 * - Handles conditional requests:
+	 *   - evaluates If-None-Match first (supports "*", lists, and weak validators "W/")
+	 *   - if no ETag match, evaluates If-Modified-Since (HTTP-date or a numeric unix timestamp)
+	 *   - responds with 304 (no body) when validators match
+	 * - Sets Content-Security-Policy using the controller-provided CspManager.
+	 * - Best-effort attempt to prevent Set-Cookie from being emitted by PHP
+	 *   (closes an active session, disables session cookies for the remainder of the request,
+	 *   and removes already queued Set-Cookie headers).
+	 * - For HEAD requests, sends headers only and exits.
 	 */
 	protected function returnRawResponse($fileNode) {
 		if ($fileNode->getType() === 'dir') {
@@ -136,11 +148,9 @@ trait RawResponse {
 			}
 		}
 
-		// inside trait RawResponse (where CSP is needed)
-
 		// Expect the controller to provide a CspManager instance.
 		// If not present, throw a RuntimeException so the problem is visible and fixed in tests.
-		if (!isset($this->cspManager) || !($this->cspManager instanceof \OCA\Raw\Service\CspManager)) {
+		if (!isset($this->cspManager) || !($this->cspManager instanceof CspManager)) {
 			// throw explicit exception — do not silently fall back
 			throw new \RuntimeException('CspManager missing: controllers must create and assign $this->cspManager using IConfig.');
 		}
@@ -183,7 +193,7 @@ trait RawResponse {
 
 		// --- Otherwise send normal headers and body. Include Content-Length, ETag and Last-Modified ---
 		header("Content-Type: {$mimetype}");
-		header('Content-Length: ' . strlen($content));
+		header('Content-Length: ' . ($size !== null ? (int)$size : strlen($content)));
 		header('ETag: ' . $etag);
 		if ($lastModifiedHeader !== null) {
 			header('Last-Modified: ' . $lastModifiedHeader);

@@ -2,15 +2,15 @@
 namespace OCA\Raw\Controller;
 
 use OCA\Raw\Service\CspManager;
+use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
 use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
 use OCP\AppFramework\Http\Attribute\PublicPage;
+use OCP\AppFramework\Http\NotFoundResponse;
+use OCP\Files\NotFoundException;
 use OCP\IConfig;
 use OCP\IRequest;
 use OCP\Share\IManager;
-use OCP\AppFramework\Controller;
-use OCP\AppFramework\Http\NotFoundResponse;
-use OCP\Files\NotFoundException;
 
 class PubPageController extends Controller {
 	use RawResponse;
@@ -70,11 +70,12 @@ class PubPageController extends Controller {
 		$node = $share->getNode();
 		$this->returnRawResponse($node);
 	}
+
 	#[NoAdminRequired]
 	#[NoCSRFRequired]
 	#[PublicPage]
-	public function getByTokenWithoutS($token, $path) {
-		return $this->getByToken($token, $path);
+	public function getByTokenWithoutS($token) {
+		return $this->getByToken($token);
 	}
 
 	#[NoAdminRequired]
@@ -88,7 +89,7 @@ class PubPageController extends Controller {
 		$share = $this->shareManager->getShareByToken($token);
 		$dirNode = $share->getNode();
 		if ($dirNode->getType() !== 'dir') {
-			throw new Exception("Received a sub-path for a share that is not a directory");
+			throw new \Exception("Received a sub-path for a share that is not a directory");
 		}
 		try {
 			$fileNode = $dirNode->get($path);
@@ -97,6 +98,7 @@ class PubPageController extends Controller {
 		}
 		$this->returnRawResponse($fileNode);
 	}
+
 	#[NoAdminRequired]
 	#[NoCSRFRequired]
 	#[PublicPage]
