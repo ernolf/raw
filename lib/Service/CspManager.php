@@ -9,7 +9,7 @@ class CspManager {
 	 * Central hard-coded fallback CSP.
 	 * Edit this constant to change the global default policy (single source of truth).
 	 */
-	public const HARD_FALLBACK = "sandbox; default-src 'none'; img-src data:; media-src data:; style-src data: 'unsafe-inline'; font-src data:; frame-src data:";
+	public const HARD_FALLBACK = "sandbox; default-src 'none'; style-src data: 'unsafe-inline'; img-src data:; media-src data:; font-src data:; frame-src data:";
 
 	/** @var IConfig */
 	protected $configService;
@@ -193,10 +193,9 @@ class CspManager {
 	 */
 	public function buildCspFromPolicy($policy) {
 		$allowed = [
-			'default-src','script-src','style-src','img-src','media-src','font-src',
-			'connect-src','object-src','frame-src','frame-ancestors','base-uri',
-			'form-action','worker-src','manifest-src','prefetch-src','child-src',
-			'upgrade-insecure-requests','block-all-mixed-content','sandbox'
+			'base-uri','child-src','connect-src','default-src','font-src','form-action',
+			'frame-ancestors','frame-src','img-src','manifest-src','media-src','object-src',
+			'sandbox','script-src','style-src','upgrade-insecure-requests','worker-src'
 		];
 
 		// string passthrough
@@ -238,7 +237,7 @@ class CspManager {
 			}
 
 			// canonical ordering: default-src first, then common, then rest alphabetical
-			$priority = ['default-src','script-src','style-src','img-src','media-src','font-src','connect-src','frame-src','frame-ancestors'];
+			$priority = ['default-src','script-src','style-src','child-src','img-src','media-src','font-src','connect-src','frame-src','frame-ancestors'];
 			$ordered = [];
 			foreach ($priority as $d) {
 				if (isset($normalized[$d])) {
