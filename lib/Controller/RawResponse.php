@@ -13,18 +13,17 @@ trait RawResponse {
 	 * Uses the node-provided MIME type by default. If the filename has no extension,
 	 * detects the MIME type from the file content via finfo(FILEINFO_MIME_TYPE).
 	 */
-	protected function getMimeType($fileNode) {
+	protected function getMimeType($fileNode, ?string $content = null) {
 		$filename = $fileNode->getName();
 		$mimetype = $fileNode->getMimeType();
 
-		// If there is no extension, detect MIME type from the file content.
-		if (empty(pathinfo($filename, PATHINFO_EXTENSION))) {
-			// Initialize finfo to detect MIME type.
+		$ext = pathinfo($filename, PATHINFO_EXTENSION);
+		// If there is no extension OR Nextcloud reports a generic binary MIME type,
+		// detect MIME type from the file content.
+		if (empty($ext) || strtolower((string)$mimetype) === 'application/octet-stream') {
 			$finfo = new \finfo(FILEINFO_MIME_TYPE);
-			$content = $fileNode->getContent();
-
-			// Detect MIME type based on buffer content; fallback to octet-stream.
-			$mimetype = $finfo->buffer($content) ?: 'application/octet-stream';
+			$buf = $content ?? $fileNode->getContent();
+			$mimetype = $finfo->buffer($buf) ?: 'application/octet-stream';
 		}
 
 		return $mimetype;
@@ -63,7 +62,7 @@ trait RawResponse {
 
 		// Load content and determine MIME type.
 		$content = $fileNode->getContent();
-		$mimetype = $this->getMimeType($fileNode);
+		$mimetype = $this->getMimeType($fileNode, $content);
 
 		// --- Build ETag: prefer mtime+size to avoid expensive hashing ---
 		$etag = null;
