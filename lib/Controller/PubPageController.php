@@ -6,7 +6,6 @@ use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
 use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
 use OCP\AppFramework\Http\Attribute\PublicPage;
-use OCP\AppFramework\Http\NotFoundResponse;
 use OCP\Files\NotFoundException;
 use OCP\IConfig;
 use OCP\IRequest;
@@ -21,6 +20,20 @@ class PubPageController extends Controller {
 	private $config;
 	/** @var CspManager */
 	protected $cspManager;
+
+	private function plainNotFound() {
+		if (session_status() === PHP_SESSION_ACTIVE) {
+			session_write_close();
+			ini_set('session.use_cookies', 0);
+		}
+		header_remove('Set-Cookie');
+		header('Content-Type: text/plain; charset=utf-8');
+		header('Cache-Control: no-store, max-age=0');
+		header('Content-Length: 9');
+		http_response_code(404);
+		echo 'Not found';
+		exit;
+	}
 
 	public function __construct(
 		$appName,
@@ -63,11 +76,15 @@ class PubPageController extends Controller {
 	#[PublicPage]
 	public function getByToken($token) {
 		if (!$this->isAllowedToken($token)) {
-			return new NotFoundResponse();
+			$this->plainNotFound();
 		}
 
-		$share = $this->shareManager->getShareByToken($token);
-		$node = $share->getNode();
+		try {
+			$share = $this->shareManager->getShareByToken($token);
+			$node = $share->getNode();
+		} catch (\Throwable $e) {
+			$this->plainNotFound();
+		}
 		$this->returnRawResponse($node);
 	}
 
@@ -83,18 +100,22 @@ class PubPageController extends Controller {
 	#[PublicPage]
 	public function getByTokenAndPath($token, $path) {
 		if (!$this->isAllowedToken($token)) {
-			return new NotFoundResponse();
+			$this->plainNotFound();
 		}
 
-		$share = $this->shareManager->getShareByToken($token);
-		$dirNode = $share->getNode();
+		try {
+			$share = $this->shareManager->getShareByToken($token);
+			$dirNode = $share->getNode();
+		} catch (\Throwable $e) {
+			$this->plainNotFound();
+		}
 		if ($dirNode->getType() !== 'dir') {
 			throw new \Exception("Received a sub-path for a share that is not a directory");
 		}
 		try {
 			$fileNode = $dirNode->get($path);
 		} catch (NotFoundException $e) {
-			return new NotFoundResponse();
+			$this->plainNotFound();
 		}
 		$this->returnRawResponse($fileNode);
 	}
