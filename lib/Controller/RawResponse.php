@@ -4,9 +4,106 @@ namespace OCA\Raw\Controller;
 use OCA\Raw\Service\CspManager;
 use OCP\AppFramework\Http\NotFoundResponse;
 use OCP\Files\NotFoundException;
+use OCP\IConfig;
 
 trait RawResponse {
 
+	/**
+	 * Enable offload debug headers per request.
+	 * Send: -H 'X-Raw-Offload-Debug: 1'
+	 */
+	protected function isOffloadDebugRequested(): bool {
+		return (($_SERVER['HTTP_X_RAW_OFFLOAD_DEBUG'] ?? '') === '1');
+	}
+
+	/**
+	 * Sanitize a token-like value for use in headers (reason codes etc.).
+	 */
+	protected function sanitizeHeaderToken(string $s): string {
+		$s = strtolower($s);
+		$s = preg_replace('/[^a-z0-9._-]+/', '_', $s);
+		return trim($s, '_');
+	}
+
+	/**
+	 * Emit an offload status header only when debug is requested.
+	 * We intentionally do not leak local paths or storage details to clients.
+	 */
+	protected function emitOffloadDebug(string $status, string $reason): void {
+		if (!$this->isOffloadDebugRequested()) {
+			return;
+		}
+		$status = $this->sanitizeHeaderToken($status);
+		$reason = $this->sanitizeHeaderToken($reason);
+		if ($status === '') {
+			$status = 'none';
+		}
+		if ($reason === '') {
+			$reason = 'unknown';
+		}
+		header('X-Raw-Offload: ' . $status . '; reason=' . $reason);
+	}
+
+	/**
+	 * Detect whether this raw request is the private URL form: /apps/raw/u/{userId}/...
+	 */
+	protected function isPrivateRawRequest(): bool {
+		$uri = $_SERVER['REQUEST_URI'] ?? '';
+		$path = parse_url($uri, PHP_URL_PATH);
+		if ($path === null || $path === false) {
+			$path = $uri;
+		}
+		return (bool)preg_match('#^/apps/raw/u/#', (string)$path);
+	}
+
+	/**
+	 * Build Cache-Control header value.
+	 *
+	 * System config knobs (config/config.php):
+	 * - raw_cache_public_max_age (int seconds, default 300)
+	 * - raw_cache_public_stale_while_revalidate (int seconds, default 30; 0 disables)
+	 * - raw_cache_public_stale_if_error (int seconds, default 86400; 0 disables)
+	 * - raw_cache_private_no_store (bool, default false)
+	 */
+	protected function buildCacheControlValue(bool $isPrivate): string {
+		// Defaults (used if IConfig is not available for some reason)
+		$publicMaxAge = 300;
+		$publicSWR = 30;
+		$publicSIE = 86400;
+		$privateNoStore = false;
+
+		if (isset($this->config) && $this->config instanceof IConfig) {
+			$publicMaxAge = (int)$this->config->getSystemValue('raw_cache_public_max_age', $publicMaxAge);
+			$publicSWR    = (int)$this->config->getSystemValue('raw_cache_public_stale_while_revalidate', $publicSWR);
+			$publicSIE    = (int)$this->config->getSystemValue('raw_cache_public_stale_if_error', $publicSIE);
+			$privateNoStore = (bool)$this->config->getSystemValue('raw_cache_private_no_store', $privateNoStore);
+		}
+
+		$publicMaxAge = max(0, $publicMaxAge);
+		$publicSWR    = max(0, $publicSWR);
+		$publicSIE    = max(0, $publicSIE);
+
+		if ($isPrivate) {
+			if ($privateNoStore) {
+				return 'private, no-store, max-age=0';
+			}
+			return 'private, max-age=0';
+		}
+
+		$parts = ['public', 'max-age=' . $publicMaxAge];
+		if ($publicSWR > 0) {
+			$parts[] = 'stale-while-revalidate=' . $publicSWR;
+		}
+		if ($publicSIE > 0) {
+			$parts[] = 'stale-if-error=' . $publicSIE;
+		}
+		return implode(', ', $parts);
+	}
+
+	protected function applyCacheControlHeader(): void {
+		$cc = $this->buildCacheControlValue($this->isPrivateRawRequest());
+		header('Cache-Control: ' . $cc);
+	}
 	/**
 	 * Determine the MIME type for a file node.
 	 *
