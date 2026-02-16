@@ -98,6 +98,22 @@ class PubPageController extends Controller {
 	#[NoAdminRequired]
 	#[NoCSRFRequired]
 	#[PublicPage]
+	public function getByTokenRoot($token) {
+		// Wrapper for root alias /raw/{token}, keeps legacy /apps/raw/{token} intact
+		return $this->getByTokenWithoutS($token);
+	}
+
+	#[NoAdminRequired]
+	#[NoCSRFRequired]
+	#[PublicPage]
+	public function getByTokenRootLegacyS($token) {
+		// Wrapper for legacy root alias /raw/s/{token}
+		return $this->getByTokenWithoutS($token);
+	}
+
+	#[NoAdminRequired]
+	#[NoCSRFRequired]
+	#[PublicPage]
 	public function getByTokenAndPath($token, $path) {
 		if (!$this->isAllowedToken($token)) {
 			$this->plainNotFound();
@@ -125,5 +141,40 @@ class PubPageController extends Controller {
 	#[PublicPage]
 	public function getByTokenAndPathWithoutS($token, $path) {
 		return $this->getByTokenAndPath($token, $path);
+	}
+
+	#[NoAdminRequired]
+	#[NoCSRFRequired]
+	#[PublicPage]
+	public function getByTokenAndPathRoot($token, $path) {
+		// Wrapper for root alias /raw/{token}/{path}
+		return $this->getByTokenAndPathWithoutS($token, $path);
+	}
+
+	#[NoAdminRequired]
+	#[NoCSRFRequired]
+	#[PublicPage]
+	public function getByTokenAndPathRootLegacyS($token, $path) {
+		// Wrapper for legacy root alias /raw/s/{token}/{path}
+		return $this->getByTokenAndPathWithoutS($token, $path);
+	}
+
+	#[NoAdminRequired]
+	#[NoCSRFRequired]
+	#[PublicPage]
+	public function getRssRoot() {
+		// Root namespace alias: /rss -> behaves like /raw/rss
+		return $this->getByTokenRoot('rss');
+	}
+
+	#[NoAdminRequired]
+	#[NoCSRFRequired]
+	#[PublicPage]
+	public function getRssRootPath($path = '') {
+		// Root namespace alias: /rss/{path} -> behaves like /raw/rss/{path}
+		if ($path === '' || $path === null) {
+			return $this->getByTokenRoot('rss');
+		}
+		return $this->getByTokenAndPathRoot('rss', (string)$path);
 	}
 }
