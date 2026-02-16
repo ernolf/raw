@@ -104,6 +104,171 @@ trait RawResponse {
 		$cc = $this->buildCacheControlValue($this->isPrivateRawRequest());
 		header('Cache-Control: ' . $cc);
 	}
+
+	/**
+	 * Resolve an absolute local filesystem path for the given node if possible.
+	 * Returns null if the node cannot be mapped to a local file (e.g. some external storages).
+	 */
+	protected function tryResolveLocalPath($fileNode): ?string {
+		try {
+			if (!is_callable([$fileNode, 'getStorage']) || !is_callable([$fileNode, 'getInternalPath'])) {
+				return null;
+			}
+			$storage = $fileNode->getStorage();
+			$internalPath = $fileNode->getInternalPath();
+			if (!is_object($storage) || !is_callable([$storage, 'getLocalFile'])) {
+				return null;
+			}
+			$local = $storage->getLocalFile($internalPath);
+			if (!is_string($local) || $local === '') {
+				return null;
+			}
+			$rp = realpath($local);
+			if ($rp === false || $rp === '') {
+				return null;
+			}
+			if (!is_file($rp)) {
+				return null;
+			}
+			return $rp;
+		} catch (\Throwable $e) {
+			return null;
+		}
+	}
+
+	/**
+	 * Check whether the resolved local file is within Nextcloud's datadirectory.
+	 * This prevents accidental offload of arbitrary server paths.
+	 */
+	protected function isWithinDataDirectory(string $localPath): bool {
+		if (!isset($this->config) || !($this->config instanceof IConfig)) {
+			return false;
+		}
+		$dataDir = (string)$this->config->getSystemValue('datadirectory', '');
+		if ($dataDir === '') {
+			return false;
+		}
+		$base = realpath($dataDir);
+		if ($base === false || $base === '') {
+			return false;
+		}
+		$base = rtrim($base, '/') . '/';
+		$lp = rtrim($localPath, '/');
+		return (strpos($lp . '/', $base) === 0);
+	}
+
+	/**
+	 * Try to offload the response body to the webserver (Apache X-Sendfile or Nginx X-Accel-Redirect).
+	 *
+	 * System config knobs (config/config.php):
+	 * - raw_sendfile_backend: 'off' (default), 'apache', 'nginx'
+	 * - raw_sendfile_nginx_prefix: internal URI prefix, default '/_raw_sendfile'
+	 * - raw_sendfile_allow_private (bool, default false)
+	 * - raw_sendfile_min_size_mb (int, default 0)
+	 *
+	 * Returns true if offload headers were emitted and the caller should exit().
+	 */
+	protected function tryOffloadBodyToWebserver(
+		string $localPath,
+		string $mimetype,
+		?int $size,
+		?string $etag,
+		?string $lastModifiedHeader,
+		?string &$reason
+	): bool {
+		$reason = 'unknown';
+
+		if (!isset($this->config) || !($this->config instanceof IConfig)) {
+			$reason = 'no_config';
+			return false;
+		}
+
+		$backend = strtolower((string)$this->config->getSystemValue('raw_sendfile_backend', 'off'));
+		if ($backend === '' || $backend === 'off') {
+			$reason = 'backend_off';
+			return false;
+		}
+
+		// Default: do NOT offload private (/u/...) responses unless explicitly enabled.
+		$allowPrivate = (bool)$this->config->getSystemValue('raw_sendfile_allow_private', false);
+		if ($this->isPrivateRawRequest() && !$allowPrivate) {
+			$reason = 'private_disallowed';
+			return false;
+		}
+
+		// Optional threshold: only offload when size is known and >= min size.
+		$minMb = (int)$this->config->getSystemValue('raw_sendfile_min_size_mb', 0);
+		if ($minMb > 0) {
+			if ($size === null) {
+				$reason = 'size_unknown';
+				return false;
+			}
+			$minBytes = $minMb * 1024 * 1024;
+			if ($size < $minBytes) {
+				$reason = 'too_small';
+				return false;
+			}
+		}
+
+		// Safety: only allow offload for files within the datadirectory.
+		if (!$this->isWithinDataDirectory($localPath)) {
+			$reason = 'not_in_datadir';
+			return false;
+		}
+
+		// Common headers (we want identical semantics vs streaming)
+		header("Content-Type: {$mimetype}");
+		if ($size !== null) {
+			header('Content-Length: ' . (int)$size);
+		}
+		if ($etag !== null) {
+			header('ETag: ' . $etag);
+		}
+		if ($lastModifiedHeader !== null) {
+			header('Last-Modified: ' . $lastModifiedHeader);
+		}
+		$this->applyCacheControlHeader();
+
+		if ($backend === 'apache') {
+			$reason = 'offloaded';
+			if ($this->isOffloadDebugRequested()) {
+				header('X-Raw-Offload: apache-xsendfile; reason=offloaded');
+			} else {
+				header('X-Raw-Offload: apache-xsendfile');
+			}
+			header('X-Sendfile: ' . $localPath);
+			return true;
+		}
+
+		if ($backend === 'nginx') {
+			$prefix = (string)$this->config->getSystemValue('raw_sendfile_nginx_prefix', '/_raw_sendfile');
+			$prefix = '/' . trim($prefix, '/');
+
+			// Map absolute local path to an internal URI by stripping the datadirectory base.
+			$dataDir = (string)$this->config->getSystemValue('datadirectory', '');
+			$base = realpath($dataDir);
+			if ($base === false || $base === '') {
+				$reason = 'nginx_map_fail';
+				return false;
+			}
+			$base = rtrim($base, '/') . '/';
+			$rel = substr($localPath, strlen($base));
+			$rel = ltrim(str_replace('\\', '/', (string)$rel), '/');
+
+			$reason = 'offloaded';
+			if ($this->isOffloadDebugRequested()) {
+				header('X-Raw-Offload: nginx-x-accel; reason=offloaded');
+			} else {
+				header('X-Raw-Offload: nginx-x-accel');
+			}
+			header('X-Accel-Redirect: ' . $prefix . '/' . $rel);
+			return true;
+		}
+
+		$reason = 'unknown_backend';
+		return false;
+	}
+
 	/**
 	 * Determine the MIME type for a file node.
 	 *
