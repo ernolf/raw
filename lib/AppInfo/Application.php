@@ -64,10 +64,12 @@ class Application extends App {
 			$rootFolder = $container->query('OCP\Files\IRootFolder');
 			/** @var CspManager $cspManager */
 			$cspManager = $container->query('CspManager');
+			/** @var IConfig $config */
+			$config = $container->query('OCP\IConfig');
 			/** @var IUserSession $userSession */
 			$userSession = $container->query('OCP\IUserSession');
 
-			return new PrivatePageController($appName, $request, $rootFolder, $cspManager, $userSession);
+			return new PrivatePageController($appName, $request, $rootFolder, $cspManager, $config, $userSession);
 		});
 	}
 }

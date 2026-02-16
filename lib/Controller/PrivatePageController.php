@@ -8,6 +8,7 @@ use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
 use OCP\AppFramework\Http\NotFoundResponse;
 use OCP\Files\IRootFolder;
 use OCP\Files\NotFoundException;
+use OCP\IConfig;
 use OCP\IRequest;
 use OCP\IUserSession;
 
@@ -19,6 +20,9 @@ class PrivatePageController extends Controller {
 
 	/** @var IRootFolder */
 	private $rootFolder;
+
+	/** @var IConfig */
+	private $config;
 
 	/** @var CspManager */
 	protected $cspManager;
@@ -35,12 +39,14 @@ class PrivatePageController extends Controller {
 		IRequest $request,
 		IRootFolder $rootFolder,
 		CspManager $cspManager,
+		IConfig $config,
 		IUserSession $userSession
 	) {
 		parent::__construct($appName, $request);
 
 		$this->rootFolder = $rootFolder;
 		$this->cspManager = $cspManager;
+		$this->config = $config;
 
 		// Set loggedInUserId from the user session if available (null if anonymous)
 		// This is safer and more idiomatic than passing the UID into the constructor.
