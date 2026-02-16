@@ -282,10 +282,11 @@ trait RawResponse {
 		$ext = pathinfo($filename, PATHINFO_EXTENSION);
 		// If there is no extension OR Nextcloud reports a generic binary MIME type,
 		// detect MIME type from the file content.
-		if (empty($ext) || strtolower((string)$mimetype) === 'application/octet-stream') {
+		// NOTE: Only do content-based detection when content is already available.
+		// This avoids pulling file contents for 304/HEAD responses.
+		if (($content !== null) && (empty($ext) || strtolower((string)$mimetype) === 'application/octet-stream')) {
 			$finfo = new \finfo(FILEINFO_MIME_TYPE);
-			$buf = $content ?? $fileNode->getContent();
-			$mimetype = $finfo->buffer($buf) ?: 'application/octet-stream';
+			$mimetype = $finfo->buffer($content) ?: 'application/octet-stream';
 		}
 
 		return $mimetype;
@@ -322,9 +323,8 @@ trait RawResponse {
 			}
 		}
 
-		// Load content and determine MIME type.
-		$content = $fileNode->getContent();
-		$mimetype = $this->getMimeType($fileNode, $content);
+		$method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
+		$isHead = ($method === 'HEAD');
 
 		// --- Build ETag: prefer mtime+size to avoid expensive hashing ---
 		$etag = null;
@@ -350,11 +350,6 @@ trait RawResponse {
 			// Ignore metadata failures and fall back to content hash.
 		}
 
-		// Fallback: use MD5 of content for a byte-exact ETag.
-		if ($etag === null) {
-			$etag = '"' . md5($content) . '"';
-		}
-
 		// --- Prepare Last-Modified header (if mtime available) ---
 		$lastModifiedHeader = null;
 		if ($mtime !== null) {
@@ -366,7 +361,8 @@ trait RawResponse {
 		$ifNoneMatch = $_SERVER['HTTP_IF_NONE_MATCH'] ?? '';
 		$matchedEtag = false;
 
-		if ($ifNoneMatch !== '') {
+		// Only evaluate If-None-Match if we already have an ETag without reading the full content.
+		if ($ifNoneMatch !== '' && $etag !== null) {
 			$clientEtags = preg_split('/\s*,\s*/', $ifNoneMatch);
 			foreach ($clientEtags as $c) {
 				$c = trim($c);
@@ -426,7 +422,6 @@ trait RawResponse {
 		}
 		header('Content-Security-Policy: ' . $csp);
 
-
 		/*
 		 * Before finalizing response — remove Set-Cookie headers set earlier by PHP/Nextcloud.
 		 * This will prevent PHP from sending any Set-Cookie headers that were already queued.
@@ -442,33 +437,166 @@ trait RawResponse {
 
 		// --- If either ETag matched or If-Modified-Since matched -> 304 Not Modified ---
 		if ($matchedEtag || $matchedIMS) {
+			$this->emitOffloadDebug('none', 'not_modified');
 			// Send ETag and Last-Modified if available
-			header('ETag: ' . $etag);
+			if ($etag !== null) {
+				header('ETag: ' . $etag);
+			}
 			if ($lastModifiedHeader !== null) {
 				header('Last-Modified: ' . $lastModifiedHeader);
 			}
-			header('Cache-Control: public, max-age=0');
+			$this->applyCacheControlHeader();
 			http_response_code(304);
 			exit;
 		}
 
-		// --- Otherwise send normal headers and body. Include Content-Length, ETag and Last-Modified ---
+		// Determine MIME type without forcing a content read (important for HEAD).
+		$mimetype = $this->getMimeType($fileNode, null);
+
+		// If we are responding to HEAD, do not read the file content.
+		if ($isHead) {
+			$this->emitOffloadDebug('none', 'head_request');
+			header("Content-Type: {$mimetype}");
+			if ($size !== null) {
+				header('Content-Length: ' . (int)$size);
+			}
+			if ($etag !== null) {
+				header('ETag: ' . $etag);
+			}
+			if ($lastModifiedHeader !== null) {
+				header('Last-Modified: ' . $lastModifiedHeader);
+			}
+			$this->applyCacheControlHeader();
+			exit;
+		}
+
+		// GET (or other) -> stream body instead of reading into memory.
+		// If we have no fast ETag (mtime+size), keep the old buffered fallback (rare).
+		if ($etag === null) {
+			$this->emitOffloadDebug('none', 'no_fast_etag');
+			$content = $fileNode->getContent();
+			$mimetype = $this->getMimeType($fileNode, $content);
+			$etag = '"' . md5($content) . '"';
+
+			header("Content-Type: {$mimetype}");
+			header('Content-Length: ' . ($size !== null ? (int)$size : strlen($content)));
+			header('ETag: ' . $etag);
+			if ($lastModifiedHeader !== null) {
+				header('Last-Modified: ' . $lastModifiedHeader);
+			}
+			$this->applyCacheControlHeader();
+
+			echo $content;
+			exit;
+		}
+
+		// Try to offload the body to the webserver (optional).
+		// This returns immediately from PHP while Apache/Nginx sends the file.
+		$localPath = $this->tryResolveLocalPath($fileNode);
+		$offloadReason = 'no_local_path';
+		if ($localPath !== null) {
+			// If content-based MIME detection is needed, sniff a small prefix from disk (cheap).
+			$filename = $fileNode->getName();
+			$ext = pathinfo((string)$filename, PATHINFO_EXTENSION);
+			$nodeMime = $fileNode->getMimeType();
+			if (empty($ext) || strtolower((string)$nodeMime) === 'application/octet-stream') {
+				$sniffBytes = 32768;
+				$sniff = @file_get_contents($localPath, false, null, 0, $sniffBytes);
+				if ($sniff === false) {
+					$sniff = '';
+				}
+				$mimetype = $this->getMimeType($fileNode, $sniff);
+			}
+
+			if ($this->tryOffloadBodyToWebserver(
+				$localPath, $mimetype, ($size !== null ? (int)$size : null), $etag, $lastModifiedHeader, $offloadReason
+			)) {
+				exit;
+			}
+		}
+		$this->emitOffloadDebug('none', $offloadReason);
+
+		$stream = null;
+		try {
+			if (is_callable([$fileNode, 'fopen'])) {
+				$stream = $fileNode->fopen('r');
+			}
+		} catch (\Throwable $e) {
+			$stream = null;
+		}
+
+		// Fallback to buffered output if streaming isn't available on this node type.
+		if (!is_resource($stream)) {
+			$content = $fileNode->getContent();
+			$mimetype = $this->getMimeType($fileNode, $content);
+
+			header("Content-Type: {$mimetype}");
+			header('Content-Length: ' . ($size !== null ? (int)$size : strlen($content)));
+			header('ETag: ' . $etag);
+			if ($lastModifiedHeader !== null) {
+				header('Last-Modified: ' . $lastModifiedHeader);
+			}
+			$this->applyCacheControlHeader();
+
+			echo $content;
+			exit;
+		}
+
+		// Optional small sniff buffer to help finfo for cases like octet-stream.
+		// Tune these if you want: smaller = less work, larger = better detection.
+		$sniffBytes = 32768;
+		$sniff = null;
+
+		$filename = $fileNode->getName();
+		$ext = pathinfo((string)$filename, PATHINFO_EXTENSION);
+		$nodeMime = $fileNode->getMimeType();
+
+		if (empty($ext) || strtolower((string)$nodeMime) === 'application/octet-stream') {
+			$sniff = fread($stream, $sniffBytes);
+			if ($sniff === false) {
+				$sniff = '';
+			}
+			$mimetype = $this->getMimeType($fileNode, $sniff);
+		} else {
+			$mimetype = $this->getMimeType($fileNode, null);
+		}
+
+		// --- Send headers ---
 		header("Content-Type: {$mimetype}");
-		header('Content-Length: ' . ($size !== null ? (int)$size : strlen($content)));
+		if ($size !== null) {
+			header('Content-Length: ' . (int)$size);
+		}
 		header('ETag: ' . $etag);
 		if ($lastModifiedHeader !== null) {
 			header('Last-Modified: ' . $lastModifiedHeader);
 		}
-		header('Cache-Control: public, max-age=0');
+		$this->applyCacheControlHeader();
 
-		// For HEAD requests, send headers only and exit.
-		$method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
-		if (strtoupper($method) === 'HEAD') {
-			exit;
+		// Best-effort: flush any output buffers before streaming.
+		while (ob_get_level() > 0) {
+			@ob_end_flush();
+		}
+		@flush();
+
+		// Stream body.
+		if ($sniff !== null && $sniff !== '') {
+			echo $sniff;
 		}
 
-		// Output the body for GET requests.
-		echo $content;
+		$out = fopen('php://output', 'wb');
+		if ($out !== false) {
+			stream_copy_to_stream($stream, $out);
+			fclose($out);
+		} else {
+			while (!feof($stream)) {
+				$buf = fread($stream, 65536);
+				if ($buf === false) {
+					break;
+				}
+				echo $buf;
+			}
+		}
+		fclose($stream);
 		exit;
 	}
 }
