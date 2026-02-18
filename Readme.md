@@ -1,4 +1,4 @@
-# raw — Nextcloud raw file server
+# `raw` — Nextcloud raw file server
 
 **`raw`** serves files **as-is** so you can link directly to the file itself (i.e. without any of Nextcloud’s UI). This makes it easy to host static web pages, images, or other assets and embed/link them elsewhere.
 
@@ -8,31 +8,46 @@
 * **Fast**: keep server work low (good for assets).
 * **Quiet failures**: plain 404 Not found (text/plain) for invalid/missing public shares (no Nextcloud HTML error pages), ideal for asset fetches.
 * **Privacy-friendly**: **cookie-free responses** (best effort).
-* **Allowlist-gated:** public raw access is opt-in — only explicitly allowlisted public share tokens (or wildcard matches) are served.
-* **Secure by default**: strict CSP with optional per-scope overrides.
+* **Allowlist-gated:** public `raw` access is opt-in — only explicitly allowlisted public share tokens (or wildcard matches) are served.
+* **Secure by default**: strict CSP with optional per-scope overrides. *)
+* **Efficient validators**: for `HEAD` and `304 Not Modified`, `raw` avoids reading file contents whenever possible (no unnecessary `getContent()`). It prefers “fast” validators (mtime+size) and only performs content-based MIME sniffing when it is actually needed for a final `200` response.
+* **MIME sniffing**: When content-based detection is needed, `raw` only sniffs a small prefix (currently 32 KiB) not the full file.
+* **Streaming by default**: for normal `GET` (`200`) responses, `raw` streams the body whenever possible instead of loading the entire file into memory, improving throughput under load.
 
-For security and privacy the content is served with a [Content-Security-Policy][] (CSP) header. You can configure CSP rules in detail via Nextcloud’s system `config/config.php` key `raw_csp`. See [Content Security Policy (raw_csp)](#content-security-policy-raw_csp) below.
+*) For security and privacy the content is served with a [Content-Security-Policy][] (CSP) header. You can configure CSP rules in detail via Nextcloud’s system [`config/{raw.}config.php`](#keep-raw-settings-in-a-dedicated-config-file) key `raw_csp`. See [Content Security Policy (raw_csp)](#content-security-policy-raw_csp) below.
 
 ---
 
 ## Table of contents
 
 * [Quickstart](#quickstart)
+
 * [URL forms](#url-forms)
 
   * [Public shares](#public-shares)
   * [Private user files](#private-user-files)
+  * [Root aliases (`/raw` and `/rss`)](#root-aliases-raw-and-rss)
+
 * [Access control: token allowlist](#access-control-token-allowlist)
 
   * [`allowed_raw_tokens`](#allowed_raw_tokens)
   * [`allowed_raw_token_wildcards`](#allowed_raw_token_wildcards)
+
 * [Content Security Policy (raw_csp)](#content-security-policy-raw_csp)
 
   * [Matching priority](#matching-priority)
   * [Policy formats accepted](#policy-formats-accepted)
   * [Allowed directives](#allowed-directives)
-  * [Example PHP `config/config.php` snippets](#example-php-configconfigphp-snippets)
+  * [Example PHP `config/{raw.}config.php` snippets](#example-php-configrawconfigphp-snippets)
   * [Testing](#testing)
+
+* [Optional system-level tuning](#optional-system-level-tuning)
+
+  * [Cache-Control](#cache-control)
+  * [Webserver offload](#webserver-offload)
+
+    * [Offload debug header](#offload-debug-header)
+
 * [HTTP behavior & performance](#http-behavior--performance)
 
   * [Cookie-free responses](#cookie-free-responses)
@@ -40,8 +55,12 @@ For security and privacy the content is served with a [Content-Security-Policy][
   * [Directory handling (`index.html`)](#directory-handling-indexhtml)
   * [HEAD requests](#head-requests)
   * [Plain 404 for invalid public shares](#plain-404-for-invalid-public-shares)
+
 * [Notes & best practices](#notes--best-practices)
+
 * [Installation](#installation)
+
+  * [Updating](#updating)
 
 ---
 
@@ -49,7 +68,7 @@ For security and privacy the content is served with a [Content-Security-Policy][
 
 1. [Install/enable the app.](#installation)
 2. Create a **public share link** (token) for a file or folder.
-3. Open the raw URL:
+3. Open the `raw` URL:
 
    * `https://my-nextcloud/apps/raw/s/<token>`
    * and for folders: `https://my-nextcloud/apps/raw/s/<token>/<path/to/file>`
@@ -70,7 +89,7 @@ If the share link is:
 https://my-nextcloud/s/aBc123DeF456xyZ
 ```
 
-then this app will serve the raw file at:
+then this app will serve the `raw` file at:
 
 ```
 https://my-nextcloud/apps/raw/s/aBc123DeF456xyZ
@@ -106,11 +125,35 @@ https://my-nextcloud/apps/raw/anansi/Documents/test.html
 
 does **not** work.
 
+### Root aliases (`/raw` and `/rss`)
+
+If your Nextcloud is configured to allow `raw` in the root namespace *), additional public URL forms become available:
+
+- `/raw/{token}`
+- `/raw/{token}/{path}`
+
+Legacy compatibility aliases:
+- `/raw/s/{token}`
+- `/raw/s/{token}/{path}
+
+Special namespace shortcut:
+- `/rss`            (behaves like `/raw/rss`)
+- `/rss/{path}`     (behaves like `/raw/rss/{path}`)
+
+> [!NOTE]
+> `/rss` and `/rss/{path}` are convenience shortcuts that internally behave exactly like `/raw/rss` and `/raw/rss/{path}`. They do not bypass the [token allowlist](#access-control-token-allowlist) — the underlying share token is still `rss`.
+
+> [!IMPORTANT]
+> *) These root aliases require a core configuration allowlist entry (Nextcloud `rootUrlApps` including `raw`) in the file *lib/private/AppFramework/Routing/RouteParser.php*
+
+> [!NOTE]
+> If `rootUrlApps` is not configured (or blocked by your setup), the canonical and always-available URLs remain under `/apps/raw/...`.
+
 ---
 
 ## Access control: token allowlist
 
-The app uses a **token allowlist** to control which public share tokens are allowed to access raw content.
+The app uses a **token allowlist** to control which public share tokens are allowed to access `raw` content.
 
 > [!IMPORTANT]
 > **Only explicitly allowed tokens (or tokens matching configured wildcards) are served by `raw`.**
@@ -118,12 +161,12 @@ The app uses a **token allowlist** to control which public share tokens are allo
 > [!NOTE]
 > The wildcard matching applies to the **share token** (the public link id), not to file names or paths.
 
-One or both of the following arrays in `config/config.php` must be defined to configure token-based allowlist restrictions
-(otherwise all public raw requests will return `Not found`):
+One or both of the following arrays in [`config/{raw.}config.php`](#keep-raw-settings-in-a-dedicated-config-file) must be defined to configure token-based allowlist restrictions
+(otherwise all public `raw` requests will return `Not found`):
 
 ### `allowed_raw_tokens`
 
-An array of explicitly allowed tokens. These tokens must exactly match the share token used in raw links.
+An array of explicitly allowed tokens. These tokens must exactly match the share token used in `raw` links.
 
 ### `allowed_raw_token_wildcards`
 
@@ -172,7 +215,7 @@ For example:
 
 * Instead of a random token like `aBc123DeF456xyZ`, you can use a meaningful token such as `html`, `javascript` or `data_json` for shared directories, or prepend prefixes, append suffixes or include infixes to enable them as wildcard.
 
-This approach enhances both usability and security by allowing administrators to control access to raw links more effectively while keeping token names meaningful and consistent.
+This approach enhances both usability and security by allowing administrators to control access to `raw` links more effectively while keeping token names meaningful and consistent.
 
 ---
 
@@ -225,7 +268,7 @@ Allowed directive names are deliberately limited (to keep policies sane and safe
 
 Unknown/unsupported directives are ignored by the manager.
 
-### Example PHP `config/config.php` snippets
+### Example PHP `config/{raw.}config.php` snippets
 
 1. Extension rule — make all `.html` permissive
 
@@ -382,25 +425,129 @@ The manager checks `path_contains` against both the full request path and the pa
 
 ### Testing
 
-After you update `config/config.php` (or deploy changes), test with curl:
+After you update [`config/{raw.}config.php`](#keep-raw-settings-in-a-dedicated-config-file) (or deploy changes), test with curl:
 
-#### Public share (token) URL
+- **Public share (token) URL**:
+  ```sh
+  curl -I 'https://your-instance.example/apps/raw/s/html/calc.html'
+  ```
 
-```sh
-curl -I 'https://your-instance.example/apps/raw/s/html/calc.html'
-```
-
-#### Private user URL
-
-```sh
-curl -I 'https://your-instance.example/apps/raw/u/alice/Documents/html/calc.html'
-```
+- **Private user URL**:
+  ```sh
+  curl -I 'https://your-instance.example/apps/raw/u/alice/Documents/html/calc.html'
+  ```
 
 Inspect the `Content-Security-Policy:` response header. If you do not get the expected policy:
 
 * make sure the selector matches your URL form (token vs path vs extension),
 * check `nextcloud.log` for exceptions from `CspManager` or syntax errors in your config array,
 * remember that `token` only matches explicit share tokens.
+
+---
+
+## Optional system-level tuning
+
+This app supports optional system-level tuning via Nextcloud [`config/{raw.}config.php`](#keep-raw-settings-in-a-dedicated-config-file) system values.
+
+### Cache-Control
+
+Public responses use a configurable Cache-Control header:
+
+- `raw_cache_public_max_age` (int seconds, default: 300)
+- `raw_cache_public_stale_while_revalidate` (int seconds, default: 30; 0 disables)
+- `raw_cache_public_stale_if_error` (int seconds, default: 86400; 0 disables)
+
+Private `raw` URLs (`/apps/raw/u/...`) default to `private, max-age=0`
+
+Optionally enforce no-store for private URLs:
+- `raw_cache_private_no_store` (bool, default: false)
+
+> [!NOTE]
+> `304 Not Modified` responses apply the same Cache-Control policy (public vs. private) as normal `200` responses, so caches behave consistently across conditional requests.
+
+### Webserver offload
+
+For large files you can optionally let the webserver send the file body (PHP returns early):
+
+- `raw_sendfile_backend` (off|apache|nginx default: off)
+- `raw_sendfile_allow_private` (bool, default: false) *)
+- `raw_sendfile_min_size_mb` (int, default: 0) **)
+- `raw_sendfile_nginx_prefix` (string, default: /_raw_sendfile)
+
+> [!NOTE]
+> *) By default, offload is disabled for private raw URLs (`/apps/raw/u/...`) to keep authenticated endpoints conservative by default. If you want the webserver to offload private raw responses too, enable `raw_sendfile_allow_private`.
+
+> [!NOTE]
+> **) If `raw_sendfile_min_size_mb` is set, offload is only attempted when the file size is known and meets the threshold. If the size cannot be determined (e.g. certain storage backends), offload is skipped.
+
+**Prerequisites** (webserver configuration required):
+
+- **Apache**:
+  - Requires `mod_xsendfile` *) (or an equivalent X-Sendfile implementation) to be installed and enabled.
+  - Enable it and configure the allowed path(s) to include your Nextcloud datadirectory:
+    ```apacheconf
+    XSendFile On
+    # Use the *real* Nextcloud datadirectory from `config/config.php` -> 'datadirectory'
+    XSendFilePath /path/to/nextcloud/data
+    ```
+> [!NOTE]
+> *) Module naming varies by distribution; the key requirement is that your Apache build supports `X-Sendfile` and that the module is enabled for the vhost serving Nextcloud.
+
+- **Nginx**:
+  - Uses `X-Accel-Redirect` (built into nginx, no extra module needed).
+  - Requires an `internal` location that maps the configured prefix (default `/_raw_sendfile`) to Nextcloud’s data directory
+    via `alias` (and must ensure access is restricted to internal redirects only).
+  - Example (must match your `raw_sendfile_nginx_prefix` and Nextcloud datadirectory):
+    ```nginx
+    location /_raw_sendfile/ {
+        internal;
+        alias /path/to/nextcloud/data/;
+    }
+    ```
+> [!TIP]
+> `raw` builds the Nginx `X-Accel-Redirect` target by stripping the resolved (`realpath`) Nextcloud `datadirectory` prefix from the local file path. Ensure your Nginx `alias` uses the same resolved datadirectory path (and includes a trailing `/`). If `datadirectory` is a symlink but Nginx points to the symlink path (or vice versa), the mapping can mismatch and offload will be skipped.
+
+example offload configuration in [`config/{raw.}config.php`](#keep-raw-settings-in-a-dedicated-config-file) (for apache2):
+```php
+<?php
+$CONFIG = array (
+// -
+  // Private `raw` caching
+  'raw_cache_private_no_store' => false, // true = Never save in browser
+
+  // apache2
+  'raw_sendfile_backend' => 'apache',
+/*
+  // nginx
+  'raw_sendfile_backend' => 'nginx',
+  'raw_sendfile_nginx_prefix' => '/_raw_sendfile',
+*/
+
+  // allow offload also for /apps/raw/u/... (default false)
+  'raw_sendfile_allow_private' => false,
+
+  // only offload for files >= X MB (default 0 = no threshold)
+  'raw_sendfile_min_size_mb' => 5,
+// -
+);
+```
+
+Security notes:
+- Offload is only attempted for files that can be resolved to a local filesystem path and are located inside Nextcloud's datadirectory.
+
+#### Offload debug header
+
+To debug whether offload/streaming was used, send this request header:
+
+- `X-Raw-Offload-Debug: 1`
+
+The response may include:
+- `X-Raw-Offload: <status>; reason=<reason>`
+
+> [!NOTE]
+> When offload is active and actually used, the response may include an `X-Raw-Offload` header (e.g. `apache-xsendfile` / `nginx-x-accel`) even without debug enabled.
+> If you send `X-Raw-Offload-Debug: 1`, the app adds `reason=...` and can also emit a “not offloaded” reason, which is useful to validate your config and thresholds.
+
 
 ---
 
@@ -416,41 +563,44 @@ This keeps endpoints “naked” for asset serving and reduces overhead. (Best e
 
 `raw` supports conditional requests (cache validation) using ETags together with the `If-None-Match` header and also supports `Last-Modified` / `If-Modified-Since` semantics.
 
+> [!NOTE]
+> `raw` prefers “fast” validators (mtime + size) for ETag generation and only falls back to a content hash when needed.
+
 * **ETag / If-None-Match**: The server sends an `ETag` header identifying the current representation of the file. If the client sends `If-None-Match: "<ETag>"` and the value matches, the server responds with `304 Not Modified` and no response body. The wildcard `If-None-Match: *` is also supported.
 * **Last-Modified / If-Modified-Since**: When the server can read file modification time (mtime) it sets a `Last-Modified` header. The server will honor `If-Modified-Since` when `If-None-Match` is not present. If the client date is equal to or newer than the file mtime, the server responds with `304 Not Modified`.
 * **Unix timestamp convenience**: For convenience, `If-Modified-Since` accepts either an RFC-style HTTP-date (recommended) **or** a plain Unix timestamp (seconds). The server will trim optional quotes. RFC-style dates are the standard and should be preferred for interoperability.
 
 Examples:
 
-Get file and see headers + body (returns ETag and Last-Modified):
+- Get file and see headers + body (returns ETag and Last-Modified):
 
-```bash
-curl -i 'https://your.nextcloud/apps/raw/.../file.ext'
-```
+   ```bash
+   curl -i 'https://your.nextcloud/apps/raw/.../file.ext'
+   ```
 
-Conditional GET using ETag (replace `<ETag>` with the ETag value returned by the server, should return 304 if it matches):
+- Conditional GET using ETag (replace `<ETag>` with the ETag value returned by the server, should return 304 if it matches):
 
-```bash
-curl -i -H 'If-None-Match: "<ETag>"' 'https://your.nextcloud/apps/raw/.../file.ext'
-```
+   ```bash
+   curl -i -H 'If-None-Match: "<ETag>"' 'https://your.nextcloud/apps/raw/.../file.ext'
+   ```
 
-Conditional GET using HTTP-date:
+- Conditional GET using HTTP-date:
 
-```bash
-curl -i -H 'If-Modified-Since: "Sun, 25 May 2025 21:40:02 GMT"' 'https://your.nextcloud/apps/raw/.../file.ext'
-```
+   ```bash
+   curl -i -H 'If-Modified-Since: "Sun, 25 May 2025 21:40:02 GMT"' 'https://your.nextcloud/apps/raw/.../file.ext'
+   ```
 
-Conditional GET using Unix timestamp (convenience):
+- Conditional GET using Unix timestamp (convenience):
 
-```bash
-curl -i -H 'If-Modified-Since: "1748209203"' 'https://your.nextcloud/apps/raw/.../file.ext'
-```
+   ```bash
+   curl -i -H 'If-Modified-Since: "1748209203"' 'https://your.nextcloud/apps/raw/.../file.ext'
+   ```
 
-The wildcard `If-None-Match: *` is also supported (it matches any existing representation) and will return a 304 if the resource exists:
+- The wildcard `If-None-Match: *` is also supported (it matches any existing representation) and will return a 304 if the resource exists:
 
-```bash
-curl -i -H 'If-None-Match: *' 'https://your.nextcloud/apps/raw/.../file.ext'
-```
+   ```bash
+   curl -i -H 'If-None-Match: *' 'https://your.nextcloud/apps/raw/.../file.ext'
+   ```
 
 ### Directory handling (`index.html`)
 
@@ -462,7 +612,7 @@ If the requested node is a directory, `raw` attempts to serve `index.html` from 
 
 ### Plain 404 for invalid public shares
 
-For public endpoints, `raw` returns a minimal `text/plain` **404 Not found** response for disallowed tokens, missing shares, and missing paths. This avoids rendering large HTML error pages and keeps raw endpoints lightweight.
+For public endpoints, `raw` returns a minimal `text/plain` **404 Not found** response for disallowed tokens, missing shares, and missing paths. This avoids rendering large HTML error pages and keeps `raw` endpoints lightweight.
 
 ---
 
@@ -475,22 +625,38 @@ For public endpoints, `raw` returns a minimal `text/plain` **404 Not found** res
 * Avoid `script-src 'unsafe-inline'` unless absolutely necessary. When you need inline scripts, prefer nonces or restrictive policies.
 * Keep the `token` selector only if you want per-share (per-token) policies. If you do not need that granularity, it is safe to remove `token` and rely on path/extension/mimetype rules.
 * The manager normalizes directives and removes duplicates; unknown directives are ignored (no crash but check logs).
-* keep raw settings in a dedicated config file:
-  * Nextcloud can load settings from multiple files in `config/.` For `raw`, it’s recommended to keep `allowed_raw_tokens`, `allowed_raw_token_wildcards`, and `raw_csp` in a dedicated **`config/raw.config.php`** (any *.config.php in config/ is loaded and overrides config/config.php).
+### Keep `raw` settings in a dedicated config file:
+  * Nextcloud can load settings from multiple files in `config/.` For `raw`, it’s recommended to keep all `raw` related directives like `allowed_raw_tokens`, `allowed_raw_token_wildcards`, `raw_csp` etc. in a dedicated **`config/raw.config.php`** (any *.config.php in config/ is loaded and overrides config/config.php).
   * This keeps raw-specific security settings isolated, avoids accidental clutter in config.php, and plays nicely with config management.
-  * **Gotcha:** Nextcloud can consolidate config values into config/config.php. Don’t rely on occ for raw settings if config/raw.config.php exists — raw.config.php has precedence and will override later.
+  * **Gotcha:** Nextcloud can consolidate config values into `config/config.php`. Don’t rely on `occ` for `raw` settings if `config/raw.config.php` exists — `raw.config.php` has precedence and will override later.
 
 ---
 
 ## Installation
 
-Clone this repo into your Nextcloud installation’s `/apps` (or `/custom_apps`) folder:
+1) Clone this repo into your Nextcloud installation’s `/apps` (or `/custom_apps`) folder:
+   ```
+   git clone https://github.com/ernolf/raw
+   ```
+2) Enable the app:
+   ```
+   occ app:enable raw
+   ```
+   or log into Nextcloud as admin, find and enable it in the list of apps.
 
-```
-git clone https://github.com/ernolf/raw
-```
+## Updating
 
-Then log into Nextcloud as admin, find and enable it in the list of apps.
+1) Disable the app:
+   ```
+   occ app:disable raw
+   ```
+2) Update the code (e.g. git pull in the app directory, git clone again from scratch or unpack a new archive)
+3) Enable the app again:
+   ```
+   occ app:enable raw
+   ```
+
+---
 
 This app is currently not published in the Nextcloud app store.
 
