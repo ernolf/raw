@@ -47,6 +47,6 @@ One or both of the following arrays in the `config/config.php` of your Nextcloud
     <bugs>https://github.com/ernolf/raw/issues</bugs>
     <dependencies>
         <php min-version="8.0"/>
-        <nextcloud min-version="26"/>
+        <nextcloud min-version="26" max-version="31"/>
     </dependencies>
 </info>
