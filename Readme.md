@@ -1,5 +1,18 @@
 # `raw` — Nextcloud raw file server
 
+---
+
+> [!IMPORTANT]
+> **`raw` has been discontinued and will no longer work with Nextcloud 32 or later.**
+>
+> **Please migrate to [`ernolf/files_sharing_raw`](https://github.com/ernolf/files_sharing_raw/blob/main/README.md) instead.** The successor app is available in the Nextcloud App Store and can be installed the usual way.
+>
+> **Already issued `raw` URLs may change slightly after migration.** Please review and update existing links where needed.
+>
+> See the [`files_sharing_raw` README](https://github.com/ernolf/files_sharing_raw/blob/main/README.md) for installation, migration notes, current URL forms, and updated security guidance.
+
+---
+
 **`raw`** serves files **as-is** so you can link directly to the file itself (i.e. without any of Nextcloud’s UI). This makes it easy to host static web pages, images, or other assets and embed/link them elsewhere.
 
 **Design goals**
@@ -658,7 +671,7 @@ For public endpoints, `raw` returns a minimal `text/plain` **404 Not found** res
 
 ---
 
-This app is currently not published in the Nextcloud app store.
+This legacy app is no longer recommended for new installations. Use `files_sharing_raw` from the Nextcloud App Store instead. See the [`files_sharing_raw` README](https://github.com/ernolf/files_sharing_raw/blob/main/README.md) for current installation and migration details.
 
 ---
 
