@@ -5,11 +5,11 @@
 > [!IMPORTANT]
 > **`raw` has been discontinued and will no longer work with Nextcloud 32 or later.**
 >
-> **Please migrate to [`ernolf/files_sharing_raw`](https://github.com/ernolf/files_sharing_raw/blob/main/README.md) instead.** The successor app is available in the Nextcloud App Store and can be installed the usual way.
+> **Please migrate to [`ernolf/files_sharing_raw`](https://github.com/ernolf/files_sharing_raw) instead.** The successor app is available in the Nextcloud App Store and can be installed the usual way.
 >
 > **Already issued `raw` URLs may change slightly after migration.** Please review and update existing links where needed.
 >
-> See the [`files_sharing_raw` README](https://github.com/ernolf/files_sharing_raw/blob/main/README.md) for installation, migration notes, current URL forms, and updated security guidance.
+> See the [`files_sharing_raw` Readme](https://github.com/ernolf/files_sharing_raw/blob/main/Readme.md) for installation, migration notes, current URL forms, and updated security guidance.
 
 ---
 
@@ -671,7 +671,7 @@ For public endpoints, `raw` returns a minimal `text/plain` **404 Not found** res
 
 ---
 
-This legacy app is no longer recommended for new installations. Use `files_sharing_raw` from the Nextcloud App Store instead. See the [`files_sharing_raw` README](https://github.com/ernolf/files_sharing_raw/blob/main/README.md) for current installation and migration details.
+This legacy app is no longer recommended for new installations. Use `files_sharing_raw` from the Nextcloud App Store instead. See the [`files_sharing_raw` Readme](https://github.com/ernolf/files_sharing_raw/blob/main/Readme.md) for current installation and migration details.
 
 ---
 
